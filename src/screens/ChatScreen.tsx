@@ -9,16 +9,19 @@ import {
   TouchableOpacity,
   GestureResponderEvent,
   Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EventEmitter } from 'expo-modules-core';
 import { useConfigContext } from '../store/config';
 import { InkeepClient, ChatMessage } from '../lib/inkeepClient';
 import * as Speech from 'expo-speech';
+import { useHeaderHeight } from '@react-navigation/elements';
 
 export default function ChatScreen({ route }: any) {
   const { agentId } = route.params as { agentId: string };
   const insets = useSafeAreaInsets();
+  const headerHeight = useHeaderHeight();
   const { config, activeManageBaseUrl, activeRunBaseUrl } = useConfigContext();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -288,58 +291,69 @@ export default function ChatScreen({ route }: any) {
 
 
   return (
-    <View style={{ flex: 1 }}>
-      <ScrollView style={{ flex: 1, padding: 16 }} contentContainerStyle={{ paddingBottom: insets.bottom }}>
-        {messages.map((m, i) => (
-          <View key={i} style={[styles.msg, m.role === 'user' ? styles.user : styles.assistant]}>
-            <Text style={styles.role}>{m.role}</Text>
-            <Text>{m.content}</Text>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={headerHeight}
+    >
+      <View style={{ flex: 1 }}>
+        <ScrollView
+          style={{ flex: 1, padding: 16 }}
+          contentContainerStyle={{ paddingBottom: insets.bottom }}
+          keyboardShouldPersistTaps="handled"
+          contentInsetAdjustmentBehavior="automatic"
+        >
+          {messages.map((m, i) => (
+            <View key={i} style={[styles.msg, m.role === 'user' ? styles.user : styles.assistant]}>
+              <Text style={styles.role}>{m.role}</Text>
+              <Text>{m.content}</Text>
+            </View>
+          ))}
+        </ScrollView>
+        {listening && (
+          <View style={[styles.overlay, { bottom: 72 + insets.bottom }]} pointerEvents="none">
+            <Text style={styles.overlayText}>{willCancel ? 'Release to edit' : 'Release to send'}</Text>
+            {!!liveTranscript && (
+              <Text style={styles.overlayTranscript} numberOfLines={2}>
+                {liveTranscript}
+              </Text>
+            )}
           </View>
-        ))}
-      </ScrollView>
-      {listening && (
-        <View style={[styles.overlay, { bottom: 72 + insets.bottom }]} pointerEvents="none">
-          <Text style={styles.overlayText}>{willCancel ? 'Release to edit' : 'Release to send'}</Text>
-          {!!liveTranscript && (
-            <Text style={styles.overlayTranscript} numberOfLines={2}>
-              {liveTranscript}
-            </Text>
-          )}
+        )}
+        <View style={[styles.inputRow, { paddingBottom: 12 + insets.bottom }]}>
+          <View style={styles.micWrapper}>
+            <TouchableOpacity
+              style={[styles.mic, listening && styles.micOn]}
+              activeOpacity={0.7}
+              onPressIn={() => {
+                lastGrantTimeRef.current = Date.now();
+                if (!listening) startRecording();
+              }}
+              onPressOut={() => {
+                const now = Date.now();
+                const dt = now - lastGrantTimeRef.current;
+                const delay = Math.max(0, minHoldMs - dt);
+                if (delay > 0) {
+                  setTimeout(() => { if (listening) stopRecordingAndHandle(); }, delay);
+                } else {
+                  if (listening) stopRecordingAndHandle();
+                }
+              }}
+            >
+              <Text style={{ color: listening ? 'white' : '#333' }}>{listening ? 'Recording…' : 'Hold to Talk'}</Text>
+            </TouchableOpacity>
+          </View>
+          <TextInput
+            style={styles.input}
+            value={input}
+            onChangeText={setInput}
+            placeholder={listening ? 'Listening…' : 'Type a message or hold the mic'}
+            multiline
+          />
+          <Button title="Send" onPress={() => send(input)} />
         </View>
-      )}
-      <View style={[styles.inputRow, { paddingBottom: 12 + insets.bottom }]}>
-        <View style={styles.micWrapper}>
-          <TouchableOpacity
-            style={[styles.mic, listening && styles.micOn]}
-            activeOpacity={0.7}
-            onPressIn={() => {
-              lastGrantTimeRef.current = Date.now();
-              if (!listening) startRecording();
-            }}
-            onPressOut={() => {
-              const now = Date.now();
-              const dt = now - lastGrantTimeRef.current;
-              const delay = Math.max(0, minHoldMs - dt);
-              if (delay > 0) {
-                setTimeout(() => { if (listening) stopRecordingAndHandle(); }, delay);
-              } else {
-                if (listening) stopRecordingAndHandle();
-              }
-            }}
-          >
-            <Text style={{ color: listening ? 'white' : '#333' }}>{listening ? 'Recording…' : 'Hold to Talk'}</Text>
-          </TouchableOpacity>
-        </View>
-        <TextInput
-          style={styles.input}
-          value={input}
-          onChangeText={setInput}
-          placeholder={listening ? 'Listening…' : 'Type a message or hold the mic'}
-          multiline
-        />
-        <Button title="Send" onPress={() => send(input)} />
       </View>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 
