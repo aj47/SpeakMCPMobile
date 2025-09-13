@@ -14,6 +14,8 @@ export type ChatMessage = {
   content?: string;
 };
 
+
+
 export class InkeepClient {
   private cfg: InkeepConfig;
 
@@ -51,6 +53,7 @@ export class InkeepClient {
   /**
    * POST Run API (Standard Mode): /v1/chat/completions with API key
    * If the server responds with text/event-stream, this will parse SSE chunks and accumulate assistant content.
+
    * You can pass an onToken callback to receive incremental tokens.
    */
   async chat(
@@ -60,10 +63,12 @@ export class InkeepClient {
   ): Promise<string> {
     const url = `${this.cfg.runBaseUrl}/v1/chat/completions`;
     const body = { model: this.cfg.model, messages, conversationId, stream: true } as any;
+
     const res = await fetch(url, {
       method: 'POST',
       headers: this.authHeaders(),
       body: JSON.stringify(body),
+
     });
     if (!res.ok) {
       const text = await res.text().catch(() => '');
@@ -71,10 +76,13 @@ export class InkeepClient {
     }
 
     const ct = res.headers.get('content-type') || '';
-    // If not streaming, just try to parse JSON and return the assistant content
-    if (!ct.includes('text/event-stream') || !('body' in res) || !res.body) {
+
+    const isSSE = ct.includes('text/event-stream');
+    const supportsReader = !!(res as any)?.body && typeof (res as any).body.getReader === 'function';
+
+    // Non-SSE responses: parse JSON content or return raw text
+    if (!isSSE) {
       const text = await res.text();
-      // Try to extract choices[0].message.content if JSON
       try {
         const j = JSON.parse(text);
         const content = j?.choices?.[0]?.message?.content ?? '';
@@ -82,6 +90,44 @@ export class InkeepClient {
       } catch {
         return text;
       }
+    }
+
+    // SSE but streaming not supported (React Native fetch): fallback to parsing the full text
+    if (isSSE && !supportsReader) {
+      const text = await res.text();
+      let finalText = '';
+      const chunks = text.split(/\r?\n\r?\n/);
+      for (const chunk of chunks) {
+        const lines = chunk.split(/\r?\n/).map(l => l.replace(/^data:\s?/, '').trim()).filter(Boolean);
+        for (const l of lines) {
+          if (l === '[DONE]' || l === '"[DONE]"') {
+            return finalText;
+          }
+          try {
+            const obj = JSON.parse(l);
+            const delta = obj?.choices?.[0]?.delta;
+            let token = delta?.content as string | undefined;
+            if (!token && obj?.choices?.[0]?.message?.content) {
+              token = obj.choices[0].message.content as string;
+            }
+            if (typeof token === 'string' && token.length > 0) {
+              if (token.trim().startsWith('{')) {
+                try {
+                  const inner = JSON.parse(token);
+                  if (inner?.type === 'data-operation') {
+                    continue; // ignore control events embedded in content
+                  }
+                } catch {}
+              }
+              finalText += token;
+              onToken?.(token);
+            }
+          } catch {
+            // ignore non-JSON lines
+          }
+        }
+      }
+      return finalText;
     }
 
     // Streaming parse
@@ -104,6 +150,7 @@ export class InkeepClient {
           if (!l) continue;
           if (l === '[DONE]' || l === '"[DONE]"') {
             // End of stream
+
             return finalText;
           }
           try {
@@ -121,14 +168,17 @@ export class InkeepClient {
                 } catch {}
               }
               finalText += token;
+
               onToken?.(token);
             }
           } catch {
             // ignore non-JSON lines
+
           }
         }
       }
     }
+
     return finalText;
   }
 }

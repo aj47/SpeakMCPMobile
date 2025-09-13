@@ -69,8 +69,12 @@ export default function ChatScreen({ route }: any) {
     model: config.model,
   });
 
+
+
+
   const send = async (text: string) => {
     if (!text.trim()) return;
+
     const userMsg: ChatMessage = { role: 'user', content: text };
     setMessages((m) => [...m, userMsg, { role: 'assistant', content: '' }]);
     setInput('');
@@ -78,6 +82,7 @@ export default function ChatScreen({ route }: any) {
       let full = '';
       const reply = await client.chat([...messages, userMsg], convoRef.current, (tok) => {
         full += tok;
+
         setMessages((m) => {
           const copy = [...m];
           // Update the last assistant message incrementally
@@ -91,7 +96,9 @@ export default function ChatScreen({ route }: any) {
         });
       });
       const finalText = reply || full;
+
       if (finalText) {
+
         Speech.speak(finalText, { language: 'en-US' });
       }
     } catch (e: any) {
