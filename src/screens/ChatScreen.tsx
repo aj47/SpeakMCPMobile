@@ -17,6 +17,7 @@ import { useConfigContext } from '../store/config';
 import { InkeepClient, ChatMessage } from '../lib/inkeepClient';
 import * as Speech from 'expo-speech';
 import { useHeaderHeight } from '@react-navigation/elements';
+import { theme } from '../ui/theme';
 
 export default function ChatScreen({ route }: any) {
   const { agentId } = route.params as { agentId: string };
@@ -298,7 +299,7 @@ export default function ChatScreen({ route }: any) {
     >
       <View style={{ flex: 1 }}>
         <ScrollView
-          style={{ flex: 1, padding: 16 }}
+          style={{ flex: 1, padding: theme.spacing.lg }}
           contentContainerStyle={{ paddingBottom: insets.bottom }}
           keyboardShouldPersistTaps="handled"
           contentInsetAdjustmentBehavior="automatic"
@@ -340,7 +341,7 @@ export default function ChatScreen({ route }: any) {
                 }
               }}
             >
-              <Text style={{ color: listening ? 'white' : '#333' }}>{listening ? 'Recording…' : 'Hold to Talk'}</Text>
+              <Text style={{ color: listening ? '#FFFFFF' : theme.colors.text }}>{listening ? 'Recording…' : 'Hold to Talk'}</Text>
             </TouchableOpacity>
           </View>
           <TextInput
@@ -358,16 +359,16 @@ export default function ChatScreen({ route }: any) {
 }
 
 const styles = StyleSheet.create({
-  msg: { padding: 10, borderRadius: 8, marginBottom: 8 },
-  user: { backgroundColor: '#e6f2ff', alignSelf: 'flex-end', maxWidth: '85%' },
-  assistant: { backgroundColor: '#f2f2f2', alignSelf: 'flex-start', maxWidth: '85%' },
-  role: { fontSize: 10, color: '#666', marginBottom: 4 },
-  inputRow: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, borderTopWidth: StyleSheet.hairlineWidth, borderColor: '#ddd' },
-  input: { flex: 1, borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 10, maxHeight: 120 },
+  msg: { padding: theme.spacing.md, borderRadius: 12, marginBottom: theme.spacing.sm, maxWidth: '85%' },
+  user: { backgroundColor: theme.colors.primarySoft, alignSelf: 'flex-end' },
+  assistant: { backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border, alignSelf: 'flex-start' },
+  role: { ...theme.typography.caption, marginBottom: theme.spacing.xs },
+  inputRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm, padding: theme.spacing.md, borderTopWidth: theme.hairline, borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
+  input: { ...theme.input, flex: 1, maxHeight: 120 },
   micWrapper: { borderRadius: 10 },
-  mic: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: '#ccc' },
-  micOn: { backgroundColor: '#1f7aec', borderColor: '#1f7aec' },
-  overlay: { position: 'absolute', left: 0, right: 0, bottom: 72, alignItems: 'center', padding: 12 },
-  overlayText: { backgroundColor: 'rgba(0,0,0,0.75)', color: 'white', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, marginBottom: 6, fontSize: 12 },
-  overlayTranscript: { backgroundColor: 'rgba(0,0,0,0.6)', color: 'white', padding: 8, borderRadius: 8, maxWidth: '90%' },
+  mic: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
+  micOn: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
+  overlay: { position: 'absolute', left: 0, right: 0, bottom: 72, alignItems: 'center', padding: theme.spacing.md },
+  overlayText: { ...theme.typography.caption, backgroundColor: 'rgba(0,0,0,0.75)', color: '#FFFFFF', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, marginBottom: 6 },
+  overlayTranscript: { backgroundColor: 'rgba(0,0,0,0.6)', color: '#FFFFFF', padding: 10, borderRadius: 10, maxWidth: '90%' },
 });

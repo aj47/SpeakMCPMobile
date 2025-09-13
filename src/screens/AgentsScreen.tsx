@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
 import { useConfigContext } from '../store/config';
 import { InkeepClient } from '../lib/inkeepClient';
+import { theme } from '../ui/theme';
 
 export default function AgentsScreen({ navigation }: any) {
   const { config, activeManageBaseUrl, activeRunBaseUrl, ready } = useConfigContext();
@@ -59,11 +60,11 @@ export default function AgentsScreen({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, padding: 16 },
-  h1: { fontSize: 22, fontWeight: '600', marginBottom: 8 },
-  error: { color: 'red', marginVertical: 8 },
-  item: { paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderColor: '#ddd' },
-  name: { fontSize: 16, fontWeight: '500' },
-  desc: { color: '#555', marginTop: 4 },
+  container: { flex: 1, padding: theme.spacing.lg },
+  h1: { ...theme.typography.h1, marginBottom: theme.spacing.sm },
+  error: { color: theme.colors.danger, marginVertical: theme.spacing.sm },
+  item: { ...theme.card, marginBottom: theme.spacing.md },
+  name: { ...theme.typography.h2 },
+  desc: { ...theme.typography.bodyMuted, marginTop: theme.spacing.xs },
 });
 

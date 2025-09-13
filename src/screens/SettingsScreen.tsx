@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { View, Text, TextInput, Button, Switch, StyleSheet, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppConfig, saveConfig, useConfigContext } from '../store/config';
+import { theme } from '../ui/theme';
 
 export default function SettingsScreen({ navigation }: any) {
   const insets = useSafeAreaInsets();
@@ -24,7 +25,7 @@ export default function SettingsScreen({ navigation }: any) {
   if (!ready) return null;
 
   return (
-    <ScrollView contentContainerStyle={[styles.container, { paddingBottom: insets.bottom + 16 }]}>
+    <ScrollView contentContainerStyle={[styles.container, { paddingBottom: insets.bottom + theme.spacing.md }]}>
       <Text style={styles.h1}>Inkeep Settings</Text>
 
       <Text style={styles.label}>API Key</Text>
@@ -65,10 +66,9 @@ export default function SettingsScreen({ navigation }: any) {
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 16, gap: 12 },
-  h1: { fontSize: 22, fontWeight: '600', marginBottom: 8 },
-  label: { fontSize: 14, marginTop: 8 },
-  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 10 },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  container: { padding: theme.spacing.lg, gap: theme.spacing.md },
+  h1: { ...theme.typography.h1, marginBottom: theme.spacing.xs },
+  label: { ...theme.typography.label, marginTop: theme.spacing.sm },
+  input: { ...theme.input },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: theme.spacing.sm },
 });
-
