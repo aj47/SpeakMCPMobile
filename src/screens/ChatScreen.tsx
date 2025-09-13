@@ -1,9 +1,20 @@
-import { useRef, useState } from 'react';
-import { View, Text, TextInput, Button, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  Button,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  GestureResponderEvent,
+  Platform,
+} from 'react-native';
 import { useConfigContext } from '../store/config';
 import { InkeepClient, ChatMessage } from '../lib/inkeepClient';
 import * as Speech from 'expo-speech';
 import * as SpeechRecognition from 'expo-speech-recognition';
+import { useSpeechRecognitionEvent } from 'expo-speech-recognition';
 
 export default function ChatScreen({ route }: any) {
   const { agentId } = route.params as { agentId: string };
@@ -11,6 +22,18 @@ export default function ChatScreen({ route }: any) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [listening, setListening] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState('');
+  const [willCancel, setWillCancel] = useState(false);
+  const startYRef = useRef<number | null>(null);
+
+  // Web fallback state/refs
+  const webRecognitionRef = useRef<any>(null);
+  const webFinalRef = useRef<string>('');
+  const liveTranscriptRef = useRef<string>('');
+  const willCancelRef = useRef<boolean>(false);
+  useEffect(() => { liveTranscriptRef.current = liveTranscript; }, [liveTranscript]);
+  useEffect(() => { willCancelRef.current = willCancel; }, [willCancel]);
+
   const convoRef = useRef<string | undefined>(undefined);
 
   const client = new InkeepClient({
@@ -53,26 +76,138 @@ export default function ChatScreen({ route }: any) {
     }
   };
 
-  const toggleListen = async () => {
+  // Real-time speech results
+  useSpeechRecognitionEvent('result' as any, (event: any) => {
+    // event may include { text, transcript, isFinal }
+    const t = event?.text ?? event?.transcript ?? '';
+    if (t) setLiveTranscript(t);
+  });
+
+  // Ensure Web Speech API recognizer exists and is wired
+  const ensureWebRecognizer = () => {
+    if (Platform.OS !== 'web') return false;
+    // @ts-ignore
+    const SRClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SRClass) {
+      console.warn('[Voice] Web Speech API not available (use Chrome/Edge over HTTPS).');
+      return false;
+    }
+    if (!webRecognitionRef.current) {
+      const rec = new SRClass();
+      rec.lang = 'en-US';
+      rec.interimResults = true;
+      rec.continuous = false;
+      rec.onstart = () => console.log('[Voice] web recognition start');
+      rec.onerror = (ev: any) => console.warn('[Voice] web recognition error', ev?.error || ev);
+      rec.onresult = (ev: any) => {
+        let interim = '';
+        let finalText = '';
+        for (let i = ev.resultIndex; i < ev.results.length; i++) {
+          const res = ev.results[i];
+          const txt = res[0]?.transcript || '';
+          if (res.isFinal) finalText += txt;
+          else interim += txt;
+        }
+        if (interim) setLiveTranscript(interim);
+        if (finalText) webFinalRef.current += finalText;
+      };
+      rec.onend = () => {
+        console.log('[Voice] web recognition end');
+        const finalText = (webFinalRef.current || '').trim() || (liveTranscriptRef.current || '').trim();
+        setListening(false);
+        setLiveTranscript('');
+        const willEdit = willCancelRef.current;
+        if (finalText) {
+          if (willEdit) setInput((t) => (t ? `${t} ${finalText}` : finalText));
+          else send(finalText);
+        }
+        webFinalRef.current = '';
+      };
+      webRecognitionRef.current = rec;
+    }
+    return true;
+  };
+
+
+  useSpeechRecognitionEvent('end' as any, () => {
+    // Reset when recognition ends (stop/abort)
+    setListening(false);
+  });
+
+  const startRecording = async (e?: GestureResponderEvent) => {
+    if (listening) return;
     const SR: any = SpeechRecognition as any;
     try {
-      if (!listening) {
-        setListening(true);
-        if (SR?.startAsync) {
-          await SR.startAsync({ lang: 'en-US' });
+      setWillCancel(false);
+      setLiveTranscript('');
+      setListening(true);
+      if (e) startYRef.current = e.nativeEvent.pageY;
+      if (SR?.startAsync) {
+        console.log('[Voice] native startAsync');
+        await SR.startAsync({ lang: 'en-US', interimResults: true });
+        return;
+      }
+      // Web fallback will be inserted below via ensureWebRecognizer()
+      if (ensureWebRecognizer()) {
+        try {
+          webFinalRef.current = '';
+          webRecognitionRef.current?.start();
+          console.log('[Voice] web start');
+        } catch (err) {
+          console.warn('[Voice] web start error', err);
+          setListening(false);
         }
       } else {
-        let text = '';
-        if (SR?.stopAsync) {
-          const res = await SR.stopAsync();
-          text = res?.text ?? res?.transcript ?? '';
-        }
         setListening(false);
-        if (text) setInput((t) => (t ? t + ' ' + text : text));
       }
-    } catch (e) {
+    } catch (err) {
+      console.warn('[Voice] startRecording error', err);
       setListening(false);
     }
+  };
+
+  const stopRecordingAndHandle = async () => {
+    const SR: any = SpeechRecognition as any;
+    try {
+      // If nothing is recording, ignore
+      if (!listening && !(Platform.OS === 'web' && webRecognitionRef.current)) return;
+
+      if (SR?.stopAsync) {
+        console.log('[Voice] native stopAsync');
+        const res = await SR.stopAsync();
+        const text = res?.text ?? res?.transcript ?? liveTranscript ?? '';
+        const finalText = text || liveTranscript;
+        setListening(false);
+        setLiveTranscript('');
+        if (finalText) {
+          if (willCancel) setInput((t) => (t ? `${t} ${finalText}` : finalText));
+          else await send(finalText);
+        }
+      } else if (Platform.OS === 'web' && webRecognitionRef.current) {
+        try {
+          console.log('[Voice] web stop');
+          webRecognitionRef.current.stop();
+          // onend will finalize
+        } catch (err) {
+          console.warn('[Voice] web stop error', err);
+          setListening(false);
+        }
+      }
+    } catch (err) {
+      console.warn('[Voice] stopRecording error', err);
+      setListening(false);
+    } finally {
+      startYRef.current = null;
+      setWillCancel(false);
+    }
+  };
+
+  const handleResponderMove = (e: GestureResponderEvent) => {
+    if (startYRef.current == null) return;
+    const dy = e.nativeEvent.pageY - startYRef.current;
+    // Slide up to cancel when moved up by 40px
+    const cancel = dy < -40;
+    if (cancel !== willCancel) setWillCancel(cancel);
   };
 
   return (
@@ -85,15 +220,38 @@ export default function ChatScreen({ route }: any) {
           </View>
         ))}
       </ScrollView>
+      {listening && (
+        <View style={styles.overlay} pointerEvents="none">
+          <Text style={styles.overlayText}>{willCancel ? 'Release to edit' : 'Release to send'}</Text>
+          {!!liveTranscript && (
+            <Text style={styles.overlayTranscript} numberOfLines={2}>
+              {liveTranscript}
+            </Text>
+          )}
+        </View>
+      )}
       <View style={styles.inputRow}>
-        <TouchableOpacity style={[styles.mic, listening && styles.micOn]} onPress={toggleListen}>
-          <Text style={{ color: listening ? 'white' : '#333' }}>{listening ? 'Stop' : 'Mic'}</Text>
-        </TouchableOpacity>
+        <View
+          style={styles.micWrapper}
+          onStartShouldSetResponder={() => true}
+          onResponderGrant={startRecording}
+          onResponderMove={handleResponderMove}
+          onResponderRelease={stopRecordingAndHandle}
+        >
+          <TouchableOpacity
+            style={[styles.mic, listening && styles.micOn]}
+            activeOpacity={0.7}
+            onPressIn={(e) => { if (!listening) startRecording(e as any); }}
+            onPressOut={() => { if (listening) stopRecordingAndHandle(); }}
+          >
+            <Text style={{ color: listening ? 'white' : '#333' }}>{listening ? 'Recording…' : 'Hold to Talk'}</Text>
+          </TouchableOpacity>
+        </View>
         <TextInput
           style={styles.input}
           value={input}
           onChangeText={setInput}
-          placeholder="Type a message or use the mic..."
+          placeholder={listening ? 'Listening…' : 'Type a message or hold the mic'}
           multiline
         />
         <Button title="Send" onPress={() => send(input)} />
@@ -109,7 +267,10 @@ const styles = StyleSheet.create({
   role: { fontSize: 10, color: '#666', marginBottom: 4 },
   inputRow: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 12, borderTopWidth: StyleSheet.hairlineWidth, borderColor: '#ddd' },
   input: { flex: 1, borderWidth: 1, borderColor: '#ccc', borderRadius: 8, padding: 10, maxHeight: 120 },
+  micWrapper: { borderRadius: 10 },
   mic: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: '#ccc' },
   micOn: { backgroundColor: '#1f7aec', borderColor: '#1f7aec' },
+  overlay: { position: 'absolute', left: 0, right: 0, bottom: 72, alignItems: 'center', padding: 12 },
+  overlayText: { backgroundColor: 'rgba(0,0,0,0.75)', color: 'white', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, marginBottom: 6, fontSize: 12 },
+  overlayTranscript: { backgroundColor: 'rgba(0,0,0,0.6)', color: 'white', padding: 8, borderRadius: 8, maxWidth: '90%' },
 });
-
