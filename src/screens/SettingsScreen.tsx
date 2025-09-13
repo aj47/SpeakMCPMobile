@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { View, Text, TextInput, Button, Switch, StyleSheet, ScrollView } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppConfig, saveConfig, useConfigContext } from '../store/config';
 
 export default function SettingsScreen({ navigation }: any) {
+  const insets = useSafeAreaInsets();
   const { config, setConfig, ready } = useConfigContext();
   const [local, setLocal] = useState(config.env === 'local');
   const [draft, setDraft] = useState<AppConfig>(config);
@@ -22,7 +24,7 @@ export default function SettingsScreen({ navigation }: any) {
   if (!ready) return null;
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentContainerStyle={[styles.container, { paddingBottom: insets.bottom + 16 }]}>
       <Text style={styles.h1}>Inkeep Settings</Text>
 
       <Text style={styles.label}>API Key</Text>

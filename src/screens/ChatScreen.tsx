@@ -10,6 +10,7 @@ import {
   GestureResponderEvent,
   Platform,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EventEmitter } from 'expo-modules-core';
 import { useConfigContext } from '../store/config';
 import { InkeepClient, ChatMessage } from '../lib/inkeepClient';
@@ -17,6 +18,7 @@ import * as Speech from 'expo-speech';
 
 export default function ChatScreen({ route }: any) {
   const { agentId } = route.params as { agentId: string };
+  const insets = useSafeAreaInsets();
   const { config, activeManageBaseUrl, activeRunBaseUrl } = useConfigContext();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
@@ -33,8 +35,14 @@ export default function ChatScreen({ route }: any) {
   useEffect(() => { liveTranscriptRef.current = liveTranscript; }, [liveTranscript]);
   useEffect(() => { willCancelRef.current = willCancel; }, [willCancel]);
 
+  // Debounce/guard and timing refs for voice interaction
+  const startingRef = useRef(false);
+  const stoppingRef = useRef(false);
+  const lastGrantTimeRef = useRef(0);
+  const minHoldMs = 200;
+
   // Native SR event handling (lazy-loaded to avoid Expo Go crash)
-  const srEmitterRef = useRef<EventEmitter | null>(null);
+  const srEmitterRef = useRef<any>(null);
   const srSubsRef = useRef<any[]>([]);
   const nativeFinalRef = useRef<string>('');
   const cleanupNativeSubs = () => {
@@ -107,7 +115,7 @@ export default function ChatScreen({ route }: any) {
       rec.lang = 'en-US';
       rec.interimResults = true;
       rec.continuous = false;
-      rec.onstart = () => console.log('[Voice] web recognition start');
+      rec.onstart = () => {};
       rec.onerror = (ev: any) => console.warn('[Voice] web recognition error', ev?.error || ev);
       rec.onresult = (ev: any) => {
         let interim = '';
@@ -122,7 +130,6 @@ export default function ChatScreen({ route }: any) {
         if (finalText) webFinalRef.current += finalText;
       };
       rec.onend = () => {
-        console.log('[Voice] web recognition end');
         const finalText = (webFinalRef.current || '').trim() || (liveTranscriptRef.current || '').trim();
         setListening(false);
         setLiveTranscript('');
@@ -141,7 +148,8 @@ export default function ChatScreen({ route }: any) {
   // Native 'end' event handled via lazy listener; web handled in ensureWebRecognizer onend
 
   const startRecording = async (e?: GestureResponderEvent) => {
-    if (listening) return;
+    if (startingRef.current || listening) { return; }
+    startingRef.current = true;
     try {
       setWillCancel(false);
       setLiveTranscript('');
@@ -164,6 +172,9 @@ export default function ChatScreen({ route }: any) {
               if (t) setLiveTranscript(t);
               if (event?.isFinal && t) nativeFinalRef.current = t;
             });
+            const subError = srEmitterRef.current.addListener('error', (event: any) => {
+              console.warn('[Voice] recognition error', event);
+            });
             const subEnd = srEmitterRef.current.addListener('end', () => {
               setListening(false);
               const finalText = (nativeFinalRef.current || liveTranscriptRef.current || '').trim();
@@ -175,10 +186,32 @@ export default function ChatScreen({ route }: any) {
               }
               nativeFinalRef.current = '';
             });
-            srSubsRef.current.push(subResult, subEnd);
+            srSubsRef.current.push(subResult, subError, subEnd);
 
-            console.log('[Voice] native start');
-            SR.ExpoSpeechRecognitionModule.start({ lang: 'en-US', interimResults: true });
+            // Permissions flow
+            try {
+              const perm = await SR.ExpoSpeechRecognitionModule.getPermissionsAsync();
+              if (!perm?.granted) {
+                const req = await SR.ExpoSpeechRecognitionModule.requestPermissionsAsync();
+                if (!req?.granted) {
+                  console.warn('[Voice] microphone/speech permission not granted; aborting');
+                  setListening(false);
+                  startingRef.current = false;
+                  return;
+                }
+              }
+            } catch (perr) {
+              console.warn('[Voice] permission check/request failed', perr);
+            }
+
+            // Start recognition
+            try {
+              SR.ExpoSpeechRecognitionModule.start({ lang: 'en-US', interimResults: true });
+            } catch (serr) {
+              console.warn('[Voice] native start error', serr);
+              setListening(false);
+            }
+            startingRef.current = false;
             return;
           }
         } catch (err) {
@@ -191,13 +224,15 @@ export default function ChatScreen({ route }: any) {
         try {
           webFinalRef.current = '';
           webRecognitionRef.current?.start();
-          console.log('[Voice] web start');
+          startingRef.current = false;
         } catch (err) {
           console.warn('[Voice] web start error', err);
           setListening(false);
+          startingRef.current = false;
         }
       } else {
         setListening(false);
+        startingRef.current = false;
       }
     } catch (err) {
       console.warn('[Voice] startRecording error', err);
@@ -206,6 +241,8 @@ export default function ChatScreen({ route }: any) {
   };
 
   const stopRecordingAndHandle = async () => {
+    if (stoppingRef.current) { return; }
+    stoppingRef.current = true;
     try {
       // If nothing is recording, ignore
       const hasWeb = Platform.OS === 'web' && webRecognitionRef.current;
@@ -215,7 +252,6 @@ export default function ChatScreen({ route }: any) {
         try {
           const SR: any = await import('expo-speech-recognition');
           if (SR?.ExpoSpeechRecognitionModule?.stop) {
-            console.log('[Voice] native stop');
             SR.ExpoSpeechRecognitionModule.stop();
             // Finalization handled in 'end' listener
           }
@@ -226,7 +262,6 @@ export default function ChatScreen({ route }: any) {
 
       if (Platform.OS === 'web' && webRecognitionRef.current) {
         try {
-          console.log('[Voice] web stop');
           webRecognitionRef.current.stop();
           // onend will finalize
         } catch (err) {
@@ -240,20 +275,14 @@ export default function ChatScreen({ route }: any) {
     } finally {
       startYRef.current = null;
       setWillCancel(false);
+      stoppingRef.current = false;
     }
   };
 
-  const handleResponderMove = (e: GestureResponderEvent) => {
-    if (startYRef.current == null) return;
-    const dy = e.nativeEvent.pageY - startYRef.current;
-    // Slide up to cancel when moved up by 40px
-    const cancel = dy < -40;
-    if (cancel !== willCancel) setWillCancel(cancel);
-  };
 
   return (
     <View style={{ flex: 1 }}>
-      <ScrollView style={{ flex: 1, padding: 16 }}>
+      <ScrollView style={{ flex: 1, padding: 16 }} contentContainerStyle={{ paddingBottom: insets.bottom }}>
         {messages.map((m, i) => (
           <View key={i} style={[styles.msg, m.role === 'user' ? styles.user : styles.assistant]}>
             <Text style={styles.role}>{m.role}</Text>
@@ -262,7 +291,7 @@ export default function ChatScreen({ route }: any) {
         ))}
       </ScrollView>
       {listening && (
-        <View style={styles.overlay} pointerEvents="none">
+        <View style={[styles.overlay, { bottom: 72 + insets.bottom }]} pointerEvents="none">
           <Text style={styles.overlayText}>{willCancel ? 'Release to edit' : 'Release to send'}</Text>
           {!!liveTranscript && (
             <Text style={styles.overlayTranscript} numberOfLines={2}>
@@ -271,19 +300,25 @@ export default function ChatScreen({ route }: any) {
           )}
         </View>
       )}
-      <View style={styles.inputRow}>
-        <View
-          style={styles.micWrapper}
-          onStartShouldSetResponder={() => true}
-          onResponderGrant={startRecording}
-          onResponderMove={handleResponderMove}
-          onResponderRelease={stopRecordingAndHandle}
-        >
+      <View style={[styles.inputRow, { paddingBottom: 12 + insets.bottom }]}>
+        <View style={styles.micWrapper}>
           <TouchableOpacity
             style={[styles.mic, listening && styles.micOn]}
             activeOpacity={0.7}
-            onPressIn={(e) => { if (!listening) startRecording(e as any); }}
-            onPressOut={() => { if (listening) stopRecordingAndHandle(); }}
+            onPressIn={() => {
+              lastGrantTimeRef.current = Date.now();
+              if (!listening) startRecording();
+            }}
+            onPressOut={() => {
+              const now = Date.now();
+              const dt = now - lastGrantTimeRef.current;
+              const delay = Math.max(0, minHoldMs - dt);
+              if (delay > 0) {
+                setTimeout(() => { if (listening) stopRecordingAndHandle(); }, delay);
+              } else {
+                if (listening) stopRecordingAndHandle();
+              }
+            }}
           >
             <Text style={{ color: listening ? 'white' : '#333' }}>{listening ? 'Recording…' : 'Hold to Talk'}</Text>
           </TouchableOpacity>
