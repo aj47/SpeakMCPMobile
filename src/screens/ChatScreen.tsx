@@ -10,11 +10,10 @@ import {
   GestureResponderEvent,
   Platform,
 } from 'react-native';
+import { EventEmitter } from 'expo-modules-core';
 import { useConfigContext } from '../store/config';
 import { InkeepClient, ChatMessage } from '../lib/inkeepClient';
 import * as Speech from 'expo-speech';
-import * as SpeechRecognition from 'expo-speech-recognition';
-import { useSpeechRecognitionEvent } from 'expo-speech-recognition';
 
 export default function ChatScreen({ route }: any) {
   const { agentId } = route.params as { agentId: string };
@@ -33,6 +32,22 @@ export default function ChatScreen({ route }: any) {
   const willCancelRef = useRef<boolean>(false);
   useEffect(() => { liveTranscriptRef.current = liveTranscript; }, [liveTranscript]);
   useEffect(() => { willCancelRef.current = willCancel; }, [willCancel]);
+
+  // Native SR event handling (lazy-loaded to avoid Expo Go crash)
+  const srEmitterRef = useRef<EventEmitter | null>(null);
+  const srSubsRef = useRef<any[]>([]);
+  const nativeFinalRef = useRef<string>('');
+  const cleanupNativeSubs = () => {
+    srSubsRef.current.forEach((sub) => sub?.remove?.());
+    srSubsRef.current = [];
+  };
+  // Cleanup native subscriptions on unmount
+  useEffect(() => {
+    return () => {
+      cleanupNativeSubs();
+    };
+  }, []);
+
 
   const convoRef = useRef<string | undefined>(undefined);
 
@@ -76,12 +91,7 @@ export default function ChatScreen({ route }: any) {
     }
   };
 
-  // Real-time speech results
-  useSpeechRecognitionEvent('result' as any, (event: any) => {
-    // event may include { text, transcript, isFinal }
-    const t = event?.text ?? event?.transcript ?? '';
-    if (t) setLiveTranscript(t);
-  });
+  // Real-time speech results (web handled in ensureWebRecognizer; native listeners are attached on start)
 
   // Ensure Web Speech API recognizer exists and is wired
   const ensureWebRecognizer = () => {
@@ -128,26 +138,55 @@ export default function ChatScreen({ route }: any) {
     return true;
   };
 
-
-  useSpeechRecognitionEvent('end' as any, () => {
-    // Reset when recognition ends (stop/abort)
-    setListening(false);
-  });
+  // Native 'end' event handled via lazy listener; web handled in ensureWebRecognizer onend
 
   const startRecording = async (e?: GestureResponderEvent) => {
     if (listening) return;
-    const SR: any = SpeechRecognition as any;
     try {
       setWillCancel(false);
       setLiveTranscript('');
       setListening(true);
+      nativeFinalRef.current = '';
       if (e) startYRef.current = e.nativeEvent.pageY;
-      if (SR?.startAsync) {
-        console.log('[Voice] native startAsync');
-        await SR.startAsync({ lang: 'en-US', interimResults: true });
-        return;
+
+      // Try native first via dynamic import (avoids Expo Go crash when module is unavailable)
+      if (Platform.OS !== 'web') {
+        try {
+          const SR: any = await import('expo-speech-recognition');
+          if (SR?.ExpoSpeechRecognitionModule?.start) {
+            // Attach listeners
+            if (!srEmitterRef.current) {
+              srEmitterRef.current = new EventEmitter(SR.ExpoSpeechRecognitionModule);
+            }
+            cleanupNativeSubs();
+            const subResult = srEmitterRef.current.addListener('result', (event: any) => {
+              const t = event?.results?.[0]?.transcript ?? event?.text ?? event?.transcript ?? '';
+              if (t) setLiveTranscript(t);
+              if (event?.isFinal && t) nativeFinalRef.current = t;
+            });
+            const subEnd = srEmitterRef.current.addListener('end', () => {
+              setListening(false);
+              const finalText = (nativeFinalRef.current || liveTranscriptRef.current || '').trim();
+              setLiveTranscript('');
+              const willEdit = willCancelRef.current;
+              if (finalText) {
+                if (willEdit) setInput((t) => (t ? `${t} ${finalText}` : finalText));
+                else send(finalText);
+              }
+              nativeFinalRef.current = '';
+            });
+            srSubsRef.current.push(subResult, subEnd);
+
+            console.log('[Voice] native start');
+            SR.ExpoSpeechRecognitionModule.start({ lang: 'en-US', interimResults: true });
+            return;
+          }
+        } catch (err) {
+          console.warn('[Voice] native SR unavailable (likely Expo Go):', (err as any)?.message || err);
+        }
       }
-      // Web fallback will be inserted below via ensureWebRecognizer()
+
+      // Web fallback
       if (ensureWebRecognizer()) {
         try {
           webFinalRef.current = '';
@@ -167,23 +206,25 @@ export default function ChatScreen({ route }: any) {
   };
 
   const stopRecordingAndHandle = async () => {
-    const SR: any = SpeechRecognition as any;
     try {
       // If nothing is recording, ignore
-      if (!listening && !(Platform.OS === 'web' && webRecognitionRef.current)) return;
+      const hasWeb = Platform.OS === 'web' && webRecognitionRef.current;
+      if (!listening && !hasWeb) return;
 
-      if (SR?.stopAsync) {
-        console.log('[Voice] native stopAsync');
-        const res = await SR.stopAsync();
-        const text = res?.text ?? res?.transcript ?? liveTranscript ?? '';
-        const finalText = text || liveTranscript;
-        setListening(false);
-        setLiveTranscript('');
-        if (finalText) {
-          if (willCancel) setInput((t) => (t ? `${t} ${finalText}` : finalText));
-          else await send(finalText);
+      if (Platform.OS !== 'web') {
+        try {
+          const SR: any = await import('expo-speech-recognition');
+          if (SR?.ExpoSpeechRecognitionModule?.stop) {
+            console.log('[Voice] native stop');
+            SR.ExpoSpeechRecognitionModule.stop();
+            // Finalization handled in 'end' listener
+          }
+        } catch (err) {
+          console.warn('[Voice] native stop unavailable (likely Expo Go):', (err as any)?.message || err);
         }
-      } else if (Platform.OS === 'web' && webRecognitionRef.current) {
+      }
+
+      if (Platform.OS === 'web' && webRecognitionRef.current) {
         try {
           console.log('[Voice] web stop');
           webRecognitionRef.current.stop();
