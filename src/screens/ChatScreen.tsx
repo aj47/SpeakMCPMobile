@@ -10,6 +10,7 @@ import {
   GestureResponderEvent,
   Platform,
   KeyboardAvoidingView,
+  ActivityIndicator,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EventEmitter } from 'expo-modules-core';
@@ -69,6 +70,8 @@ export default function ChatScreen({ route, navigation }: any) {
   const [input, setInput] = useState('');
   const [listening, setListening] = useState(false);
   const [liveTranscript, setLiveTranscript] = useState('');
+  const [responding, setResponding] = useState(false);
+
   const [willCancel, setWillCancel] = useState(false);
   const startYRef = useRef<number | null>(null);
 
@@ -122,6 +125,8 @@ export default function ChatScreen({ route, navigation }: any) {
 
     const userMsg: ChatMessage = { role: 'user', content: text };
     setMessages((m) => [...m, userMsg, { role: 'assistant', content: '' }]);
+    setResponding(true);
+
     setInput('');
     try {
       let full = '';
@@ -148,6 +153,8 @@ export default function ChatScreen({ route, navigation }: any) {
       }
     } catch (e: any) {
       setMessages((m) => [...m, { role: 'assistant', content: `Error: ${e.message}` }]);
+    } finally {
+      setResponding(false);
     }
   };
 
@@ -369,7 +376,14 @@ export default function ChatScreen({ route, navigation }: any) {
           {messages.map((m, i) => (
             <View key={i} style={[styles.msg, m.role === 'user' ? styles.user : styles.assistant]}>
               <Text style={styles.role}>{m.role}</Text>
-              <Text>{m.content}</Text>
+              {m.role === 'assistant' && (!m.content || m.content.length === 0) ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <ActivityIndicator size="small" color={theme.colors.text} />
+                  <Text>Assistant is thinking</Text>
+                </View>
+              ) : (
+                <Text>{m.content}</Text>
+              )}
             </View>
           ))}
         </ScrollView>
