@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -13,17 +13,58 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EventEmitter } from 'expo-modules-core';
-import { useConfigContext } from '../store/config';
+import { useConfigContext, saveConfig } from '../store/config';
 import { InkeepClient, ChatMessage } from '../lib/inkeepClient';
 import * as Speech from 'expo-speech';
 import { useHeaderHeight } from '@react-navigation/elements';
 import { theme } from '../ui/theme';
 
-export default function ChatScreen({ route }: any) {
+export default function ChatScreen({ route, navigation }: any) {
   const { agentId } = route.params as { agentId: string };
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
-  const { config, activeManageBaseUrl, activeRunBaseUrl } = useConfigContext();
+  const { config, setConfig, activeManageBaseUrl, activeRunBaseUrl } = useConfigContext();
+  const handsFree = !!config.handsFree;
+  const handsFreeRef = useRef<boolean>(handsFree);
+  useEffect(() => { handsFreeRef.current = !!config.handsFree; }, [config.handsFree]);
+
+  const toggleHandsFree = async () => {
+    const next = !handsFreeRef.current;
+    const nextCfg = { ...config, handsFree: next } as any;
+    setConfig(nextCfg);
+    try { await saveConfig(nextCfg); } catch {}
+  };
+
+  useLayoutEffect(() => {
+    navigation?.setOptions?.({
+      headerRight: () => (
+        <TouchableOpacity
+          onPress={toggleHandsFree}
+          accessibilityRole="button"
+          accessibilityLabel={`Toggle hands-free (currently ${handsFree ? 'on' : 'off'})`}
+          style={{ paddingHorizontal: 12, paddingVertical: 6 }}
+        >
+          <View style={{ width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ fontSize: 18 }}>🎙️</Text>
+            {!handsFree && (
+              <View
+                style={{
+                  position: 'absolute',
+                  width: 20,
+                  height: 2,
+                  backgroundColor: theme.colors.danger,
+                  transform: [{ rotate: '45deg' }],
+                  borderRadius: 1,
+                }}
+              />
+            )}
+          </View>
+        </TouchableOpacity>
+      ),
+    });
+  }, [navigation, handsFree]);
+
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [listening, setListening] = useState(false);
@@ -125,7 +166,7 @@ export default function ChatScreen({ route }: any) {
       const rec = new SRClass();
       rec.lang = 'en-US';
       rec.interimResults = true;
-      rec.continuous = false;
+      rec.continuous = handsFreeRef.current;
       rec.onstart = () => {};
       rec.onerror = (ev: any) => console.warn('[Voice] web recognition error', ev?.error || ev);
       rec.onresult = (ev: any) => {
@@ -138,14 +179,23 @@ export default function ChatScreen({ route }: any) {
           else interim += txt;
         }
         if (interim) setLiveTranscript(interim);
-        if (finalText) webFinalRef.current += finalText;
+        if (finalText) {
+          if (handsFreeRef.current) {
+            setLiveTranscript('');
+            webFinalRef.current = '';
+            const toSend = finalText.trim();
+            if (toSend) send(toSend);
+          } else {
+            webFinalRef.current += finalText;
+          }
+        }
       };
       rec.onend = () => {
         const finalText = (webFinalRef.current || '').trim() || (liveTranscriptRef.current || '').trim();
         setListening(false);
         setLiveTranscript('');
         const willEdit = willCancelRef.current;
-        if (finalText) {
+        if (!handsFreeRef.current && finalText) {
           if (willEdit) setInput((t) => (t ? `${t} ${finalText}` : finalText));
           else send(finalText);
         }
@@ -181,7 +231,16 @@ export default function ChatScreen({ route }: any) {
             const subResult = srEmitterRef.current.addListener('result', (event: any) => {
               const t = event?.results?.[0]?.transcript ?? event?.text ?? event?.transcript ?? '';
               if (t) setLiveTranscript(t);
-              if (event?.isFinal && t) nativeFinalRef.current = t;
+              if (event?.isFinal && t) {
+                if (handsFreeRef.current) {
+                  const final = t.trim();
+                  nativeFinalRef.current = '';
+                  setLiveTranscript('');
+                  if (final) send(final);
+                } else {
+                  nativeFinalRef.current = t;
+                }
+              }
             });
             const subError = srEmitterRef.current.addListener('error', (event: any) => {
               console.warn('[Voice] recognition error', event);
@@ -191,7 +250,7 @@ export default function ChatScreen({ route }: any) {
               const finalText = (nativeFinalRef.current || liveTranscriptRef.current || '').trim();
               setLiveTranscript('');
               const willEdit = willCancelRef.current;
-              if (finalText) {
+              if (!handsFreeRef.current && finalText) {
                 if (willEdit) setInput((t) => (t ? `${t} ${finalText}` : finalText));
                 else send(finalText);
               }
@@ -217,7 +276,7 @@ export default function ChatScreen({ route }: any) {
 
             // Start recognition
             try {
-              SR.ExpoSpeechRecognitionModule.start({ lang: 'en-US', interimResults: true });
+              SR.ExpoSpeechRecognitionModule.start({ lang: 'en-US', interimResults: true, continuous: handsFreeRef.current, volumeChangeEventOptions: { enabled: handsFreeRef.current, intervalMillis: 250 } });
             } catch (serr) {
               console.warn('[Voice] native start error', serr);
               setListening(false);
@@ -234,6 +293,9 @@ export default function ChatScreen({ route }: any) {
       if (ensureWebRecognizer()) {
         try {
           webFinalRef.current = '';
+          if (webRecognitionRef.current) {
+            try { webRecognitionRef.current.continuous = handsFreeRef.current; } catch {}
+          }
           webRecognitionRef.current?.start();
           startingRef.current = false;
         } catch (err) {
@@ -311,7 +373,7 @@ export default function ChatScreen({ route }: any) {
             </View>
           ))}
         </ScrollView>
-        {listening && (
+        {!handsFree && listening && (
           <View style={[styles.overlay, { bottom: 72 + insets.bottom }]} pointerEvents="none">
             <Text style={styles.overlayText}>{willCancel ? 'Release to edit' : 'Release to send'}</Text>
             {!!liveTranscript && (
@@ -326,29 +388,37 @@ export default function ChatScreen({ route }: any) {
             <TouchableOpacity
               style={[styles.mic, listening && styles.micOn]}
               activeOpacity={0.7}
-              onPressIn={() => {
-                lastGrantTimeRef.current = Date.now();
-                if (!listening) startRecording();
-              }}
-              onPressOut={() => {
-                const now = Date.now();
-                const dt = now - lastGrantTimeRef.current;
-                const delay = Math.max(0, minHoldMs - dt);
-                if (delay > 0) {
-                  setTimeout(() => { if (listening) stopRecordingAndHandle(); }, delay);
-                } else {
-                  if (listening) stopRecordingAndHandle();
+              {...(!handsFree ? {
+                onPressIn: () => {
+                  lastGrantTimeRef.current = Date.now();
+                  if (!listening) startRecording();
+                },
+                onPressOut: () => {
+                  const now = Date.now();
+                  const dt = now - lastGrantTimeRef.current;
+                  const delay = Math.max(0, minHoldMs - dt);
+                  if (delay > 0) {
+                    setTimeout(() => { if (listening) stopRecordingAndHandle(); }, delay);
+                  } else {
+                    if (listening) stopRecordingAndHandle();
+                  }
                 }
-              }}
+              } : {
+                onPress: () => {
+                  if (!listening) startRecording(); else stopRecordingAndHandle();
+                }
+              })}
             >
-              <Text style={{ color: listening ? '#FFFFFF' : theme.colors.text }}>{listening ? 'Recording…' : 'Hold to Talk'}</Text>
+              <Text style={{ color: listening ? '#FFFFFF' : theme.colors.text }}>
+                {handsFree ? (listening ? 'Listening… Tap to Stop' : 'Tap to Talk') : (listening ? 'Recording…' : 'Hold to Talk')}
+              </Text>
             </TouchableOpacity>
           </View>
           <TextInput
             style={styles.input}
             value={input}
             onChangeText={setInput}
-            placeholder={listening ? 'Listening…' : 'Type a message or hold the mic'}
+            placeholder={handsFree ? (listening ? 'Listening…' : 'Type a message or tap the mic') : (listening ? 'Listening…' : 'Type a message or hold the mic')}
             multiline
           />
           <Button title="Send" onPress={() => send(input)} />

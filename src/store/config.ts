@@ -10,6 +10,8 @@ export type AppConfig = {
   graphId: string;
   model: string; // model name required by /v1/chat/completions
   env: EnvChoice;
+  // Voice UX
+  handsFree?: boolean; // hands-free voice mode toggle (optional for backward compatibility)
   // Separate base URLs for Manage API (CRUD) and Run API (chat)
   manageBaseUrlLocal: string; // e.g., http://localhost:3002
   manageBaseUrlCloud: string; // e.g., https://manage-api.example.com
@@ -24,6 +26,7 @@ const DEFAULTS: AppConfig = {
   graphId: '',
   model: 'gpt-4o-mini',
   env: 'cloud',
+  handsFree: false,
   manageBaseUrlLocal: 'http://localhost:3002',
   manageBaseUrlCloud: 'https://manage-api.example.com',
   runBaseUrlLocal: 'http://localhost:3003',

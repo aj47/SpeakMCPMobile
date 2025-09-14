@@ -48,6 +48,11 @@ export default function SettingsScreen({ navigation }: any) {
         <Switch value={local} onValueChange={setLocal} />
       </View>
 
+      <View style={styles.row}>
+        <Text style={styles.label}>Hands-free Voice Mode</Text>
+        <Switch value={!!draft.handsFree} onValueChange={(v)=>setDraft({ ...draft, handsFree: v })} />
+      </View>
+
       <Text style={styles.label}>Run API Base URL (Cloud)</Text>
       <TextInput style={styles.input} value={draft.runBaseUrlCloud} onChangeText={(t)=>setDraft({ ...draft, runBaseUrlCloud: t })} placeholder='https://run-api.example.com' autoCapitalize='none' />
 
