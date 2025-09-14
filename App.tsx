@@ -5,7 +5,7 @@ import SettingsScreen from './src/screens/SettingsScreen';
 import AgentsScreen from './src/screens/AgentsScreen';
 import ChatScreen from './src/screens/ChatScreen';
 import { ConfigContext, useConfig } from './src/store/config';
-import { View, ActivityIndicator } from 'react-native';
+import { View, ActivityIndicator, Image } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { theme } from './src/ui/theme';
 
@@ -32,6 +32,13 @@ function Root() {
           screenOptions={{
             headerTitleStyle: { ...theme.typography.h2 },
             contentStyle: { backgroundColor: theme.colors.background },
+            headerLeft: () => (
+              <Image
+                source={require('./assets/favicon.png')}
+                style={{ width: 28, height: 28, marginLeft: 12, marginRight: 8 }}
+                resizeMode="contain"
+              />
+            ),
           }}
         >
           <Stack.Screen name="Settings" component={SettingsScreen} />
