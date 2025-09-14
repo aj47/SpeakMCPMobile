@@ -2,9 +2,6 @@
 
 A React Native (Expo) mobile interface with voice interaction for Inkeep — talk to your Inkeep agents wherever you are, even hands‑free in the car. Quickly configure your tenant and environment, pick an agent, and chat by text or voice with real‑time transcription and optional text‑to‑speech playback.
 
-![Screenshot 1](./assets/screenshot1.png)
-![Screenshot 2](./assets/screenshot2.png)
-
 ## Features
 
 - Chat with any Inkeep Agent from your tenant
@@ -95,8 +92,8 @@ You can switch between Local and Cloud base URLs per service from Settings. The 
 
 ## Screenshots
 
-![Screenshot 1](./assets/screenshot1.png)
-![Screenshot 2](./assets/screenshot2.png)
+<img src="./assets/screenshot1.png" width="40%" alt="Screenshot 1" />
+<img src="./assets/screenshot2.png" width="40%" alt="Screenshot 2" />
 
 ## Troubleshooting
 
@@ -114,4 +111,3 @@ You can switch between Local and Cloud base URLs per service from Settings. The 
 ## License
 
 MIT
-
