@@ -148,7 +148,16 @@ export default function ChatScreen({ route, navigation }: any) {
       const finalText = reply || full;
 
       if (finalText) {
-
+        setMessages((m) => {
+          const copy = [...m];
+          for (let i = copy.length - 1; i >= 0; i--) {
+            if (copy[i].role === 'assistant') {
+              copy[i] = { ...copy[i], content: finalText };
+              break;
+            }
+          }
+          return copy;
+        });
         Speech.speak(finalText, { language: 'en-US' });
       }
     } catch (e: any) {
