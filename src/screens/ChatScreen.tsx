@@ -15,16 +15,15 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EventEmitter } from 'expo-modules-core';
 import { useConfigContext, saveConfig } from '../store/config';
-import { InkeepClient, ChatMessage } from '../lib/inkeepClient';
+import { OpenAIClient, ChatMessage } from '../lib/openaiClient';
 import * as Speech from 'expo-speech';
 import { useHeaderHeight } from '@react-navigation/elements';
 import { theme } from '../ui/theme';
 
 export default function ChatScreen({ route, navigation }: any) {
-  const { agentId } = route.params as { agentId: string };
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
-  const { config, setConfig, activeManageBaseUrl, activeRunBaseUrl } = useConfigContext();
+  const { config, setConfig } = useConfigContext();
   const handsFree = !!config.handsFree;
   const handsFreeRef = useRef<boolean>(handsFree);
   useEffect(() => { handsFreeRef.current = !!config.handsFree; }, [config.handsFree]);
@@ -71,6 +70,7 @@ export default function ChatScreen({ route, navigation }: any) {
   const [listening, setListening] = useState(false);
   const [liveTranscript, setLiveTranscript] = useState('');
   const [responding, setResponding] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<string>('');
 
   const [willCancel, setWillCancel] = useState(false);
   const startYRef = useRef<number | null>(null);
@@ -107,13 +107,9 @@ export default function ChatScreen({ route, navigation }: any) {
 
   const convoRef = useRef<string | undefined>(undefined);
 
-  const client = new InkeepClient({
-    manageBaseUrl: activeManageBaseUrl,
-    runBaseUrl: activeRunBaseUrl,
+  const client = new OpenAIClient({
+    baseUrl: config.baseUrl,
     apiKey: config.apiKey,
-    tenantId: config.tenantId,
-    projectId: config.projectId,
-    graphId: config.graphId,
     model: config.model,
   });
 
@@ -123,6 +119,16 @@ export default function ChatScreen({ route, navigation }: any) {
   const send = async (text: string) => {
     if (!text.trim()) return;
 
+    console.log('[ChatScreen] Sending message:', text);
+    console.log('[ChatScreen] Platform:', Platform.OS);
+    console.log('[ChatScreen] Current config:', {
+      baseUrl: config.baseUrl,
+      model: config.model,
+      apiKeyLength: config.apiKey?.length || 0
+    });
+
+    setDebugInfo(`Starting request to ${config.baseUrl}...`);
+
     const userMsg: ChatMessage = { role: 'user', content: text };
     setMessages((m) => [...m, userMsg, { role: 'assistant', content: '' }]);
     setResponding(true);
@@ -130,8 +136,12 @@ export default function ChatScreen({ route, navigation }: any) {
     setInput('');
     try {
       let full = '';
-      const reply = await client.chat([...messages, userMsg], convoRef.current, (tok) => {
+      console.log('[ChatScreen] Starting chat request with', messages.length + 1, 'messages');
+      setDebugInfo('Request sent, waiting for response...');
+      const reply = await client.chat([...messages, userMsg], (tok) => {
         full += tok;
+        console.log('[ChatScreen] Token received:', tok);
+        setDebugInfo(`Receiving tokens... (${full.length} chars so far)`);
 
         setMessages((m) => {
           const copy = [...m];
@@ -146,6 +156,8 @@ export default function ChatScreen({ route, navigation }: any) {
         });
       });
       const finalText = reply || full;
+      console.log('[ChatScreen] Chat completed, final text length:', finalText?.length || 0);
+      setDebugInfo(`Completed! Received ${finalText?.length || 0} characters`);
 
       if (finalText) {
         setMessages((m) => {
@@ -161,9 +173,18 @@ export default function ChatScreen({ route, navigation }: any) {
         Speech.speak(finalText, { language: 'en-US' });
       }
     } catch (e: any) {
+      console.error('[ChatScreen] Chat error:', e);
+      console.error('[ChatScreen] Error details:', {
+        message: e.message,
+        stack: e.stack,
+        name: e.name
+      });
+      setDebugInfo(`Error: ${e.message}`);
       setMessages((m) => [...m, { role: 'assistant', content: `Error: ${e.message}` }]);
     } finally {
+      console.log('[ChatScreen] Chat request finished');
       setResponding(false);
+      setTimeout(() => setDebugInfo(''), 3000); // Clear debug info after 3 seconds
     }
   };
 
@@ -395,6 +416,11 @@ export default function ChatScreen({ route, navigation }: any) {
               )}
             </View>
           ))}
+          {debugInfo && (
+            <View style={styles.debugInfo}>
+              <Text style={styles.debugText}>{debugInfo}</Text>
+            </View>
+          )}
         </ScrollView>
         {!handsFree && listening && (
           <View style={[styles.overlay, { bottom: 72 + insets.bottom }]} pointerEvents="none">
@@ -461,6 +487,19 @@ const styles = StyleSheet.create({
   micWrapper: { borderRadius: 10 },
   mic: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
   micOn: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
+  debugInfo: {
+    backgroundColor: '#f0f0f0',
+    padding: theme.spacing.sm,
+    margin: theme.spacing.sm,
+    borderRadius: 8,
+    borderLeftWidth: 4,
+    borderLeftColor: '#007AFF'
+  },
+  debugText: {
+    fontSize: 12,
+    color: '#666',
+    fontFamily: 'monospace'
+  },
   overlay: { position: 'absolute', left: 0, right: 0, bottom: 72, alignItems: 'center', padding: theme.spacing.md },
   overlayText: { ...theme.typography.caption, backgroundColor: 'rgba(0,0,0,0.75)', color: '#FFFFFF', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, marginBottom: 6 },
   overlayTranscript: { backgroundColor: 'rgba(0,0,0,0.6)', color: '#FFFFFF', padding: 10, borderRadius: 10, maxWidth: '90%' },

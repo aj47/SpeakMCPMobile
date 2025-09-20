@@ -2,7 +2,6 @@ import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import SettingsScreen from './src/screens/SettingsScreen';
-import AgentsScreen from './src/screens/AgentsScreen';
 import ChatScreen from './src/screens/ChatScreen';
 import { ConfigContext, useConfig } from './src/store/config';
 import { View, ActivityIndicator, Image } from 'react-native';
@@ -42,7 +41,6 @@ function Root() {
           }}
         >
           <Stack.Screen name="Settings" component={SettingsScreen} />
-          <Stack.Screen name="Agents" component={AgentsScreen} />
           <Stack.Screen name="Chat" component={ChatScreen} />
         </Stack.Navigator>
       </NavigationContainer>

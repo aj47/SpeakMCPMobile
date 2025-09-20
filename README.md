@@ -1,6 +1,6 @@
-# Inkeep Mobile
+# OpenAI Chat Mobile
 
-A React Native (Expo) mobile interface with voice interaction for Inkeep — talk to your Inkeep agents wherever you are, even hands‑free in the car. Quickly configure your tenant and environment, pick an agent, and chat by text or voice with real‑time transcription and optional text‑to‑speech playback.
+A React Native (Expo) mobile interface with voice interaction for OpenAI-compatible APIs — chat with AI models wherever you are, even hands‑free in the car. Quickly configure your API endpoint and model, then chat by text or voice with real‑time transcription and optional text‑to‑speech playback.
 
 ## Features
 
@@ -21,16 +21,14 @@ A React Native (Expo) mobile interface with voice interaction for Inkeep — tal
 - Speech recognition: expo-speech-recognition (native); Web Speech API fallback in browsers
 - Speech synthesis: expo-speech
 - Persistent config: AsyncStorage
-- Inkeep APIs
-  - Manage API: List agents for a tenant/project
-  - Run API: Chat completions endpoint with optional streaming token updates
+- OpenAI-compatible API integration
+  - Chat completions endpoint with optional streaming token updates
 
 Key files:
 - App.tsx: Navigation and providers
-- src/store/config.ts: Config shape, persistence, active env URLs
-- src/lib/inkeepClient.ts: Manage and Run API client with streaming parsing
-- src/screens/SettingsScreen.tsx: Configure API key, tenant/project/graph IDs, env URLs, hands‑free toggle
-- src/screens/AgentsScreen.tsx: Fetch/select agents
+- src/store/config.ts: Config shape, persistence
+- src/lib/openaiClient.ts: OpenAI-compatible API client with streaming parsing
+- src/screens/SettingsScreen.tsx: Configure API key, base URL, model, hands‑free toggle
 - src/screens/ChatScreen.tsx: Chat UI, voice UX, TTS
 
 ## Getting started
@@ -82,13 +80,14 @@ Notes:
 - On native devices, the app uses expo-speech-recognition; on web, it falls back to the browser’s Web Speech API when available
 - Permissions for microphone and speech recognition are requested at runtime (see app.json for iOS `NSMicrophoneUsageDescription` and `NSSpeechRecognitionUsageDescription`; Android uses `RECORD_AUDIO`)
 
-## Inkeep API assumption
+## OpenAI API compatibility
 
-The app expects two Inkeep services:
-- Manage API: Used to list agents for your tenant/project
-- Run API: Chat completions endpoint at `/v1/chat/completions` supporting streaming (SSE or textual chunking); the client falls back gracefully when streaming readers aren’t available in React Native
+The app works with any OpenAI-compatible API endpoint:
+- Chat completions endpoint at `/v1/chat/completions` supporting streaming (SSE or textual chunking)
+- The client falls back gracefully when streaming readers aren’t available in React Native
+- Compatible with OpenAI, Azure OpenAI, local models (Ollama, LM Studio), and other OpenAI-compatible services
 
-You can switch between Local and Cloud base URLs per service from Settings. The API key is sent as `Authorization: Bearer <API_KEY>`.
+The API key is sent as `Authorization: Bearer <API_KEY>`.
 
 ## Screenshots
 

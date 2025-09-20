@@ -1,5 +1,5 @@
 {
-  "name": "inkeep-mobile",
+  "name": "openai-chat-mobile",
   "version": "1.0.0",
   "main": "index.ts",
   "scripts": {
@@ -17,14 +17,16 @@
     "expo-speech-recognition": "^2.1.2",
     "expo-status-bar": "~3.0.8",
     "react": "19.1.0",
+    "react-dom": "19.1.0",
     "react-native": "0.81.4",
     "react-native-safe-area-context": "~5.6.0",
     "react-native-screens": "~4.16.0",
-    "react-dom": "19.1.0",
     "react-native-web": "^0.21.0"
   },
   "devDependencies": {
+    "@react-native-community/cli": "^20.0.2",
     "@types/react": "~19.1.0",
+    "@types/react-native": "^0.73.0",
     "typescript": "~5.9.2"
   },
   "private": true

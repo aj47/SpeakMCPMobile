@@ -1,36 +1,18 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
-export type EnvChoice = 'local' | 'cloud';
-
 export type AppConfig = {
   apiKey: string;
-  tenantId: string;
-  projectId: string;
-  graphId: string;
+  baseUrl: string; // OpenAI-compatible API base URL e.g., https://api.openai.com/v1
   model: string; // model name required by /v1/chat/completions
-  env: EnvChoice;
-  // Voice UX
   handsFree?: boolean; // hands-free voice mode toggle (optional for backward compatibility)
-  // Separate base URLs for Manage API (CRUD) and Run API (chat)
-  manageBaseUrlLocal: string; // e.g., http://localhost:3002
-  manageBaseUrlCloud: string; // e.g., https://manage-api.example.com
-  runBaseUrlLocal: string;    // e.g., http://localhost:3003
-  runBaseUrlCloud: string;    // e.g., https://run-api.example.com
 };
 
 const DEFAULTS: AppConfig = {
   apiKey: '',
-  tenantId: '',
-  projectId: '',
-  graphId: '',
+  baseUrl: 'https://api.openai.com/v1',
   model: 'gpt-4o-mini',
-  env: 'cloud',
   handsFree: false,
-  manageBaseUrlLocal: 'http://localhost:3002',
-  manageBaseUrlCloud: 'https://manage-api.example.com',
-  runBaseUrlLocal: 'http://localhost:3003',
-  runBaseUrlCloud: 'https://run-api.example.com',
 };
 
 const STORAGE_KEY = 'app_config_v1';
@@ -62,16 +44,7 @@ export function useConfig() {
     })();
   }, []);
 
-  const activeManageBaseUrl = useMemo(
-    () => (config.env === 'cloud' ? config.manageBaseUrlCloud : config.manageBaseUrlLocal),
-    [config.env, config.manageBaseUrlCloud, config.manageBaseUrlLocal]
-  );
-  const activeRunBaseUrl = useMemo(
-    () => (config.env === 'cloud' ? config.runBaseUrlCloud : config.runBaseUrlLocal),
-    [config.env, config.runBaseUrlCloud, config.runBaseUrlLocal]
-  );
-
-  return { config, setConfig, ready, activeManageBaseUrl, activeRunBaseUrl } as const;
+  return { config, setConfig, ready } as const;
 }
 
 export const ConfigContext = createContext<ReturnType<typeof useConfig> | null>(null);
