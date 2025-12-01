@@ -2,6 +2,7 @@
   "expo": {
     "name": "OpenAI Chat Mobile",
     "slug": "openai-chat-mobile",
+    "scheme": "speakmcp",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/favicon.png",
@@ -16,7 +17,8 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSMicrophoneUsageDescription": "This app uses the microphone for voice input.",
-        "NSSpeechRecognitionUsageDescription": "This app uses speech recognition to transcribe your voice."
+        "NSSpeechRecognitionUsageDescription": "This app uses speech recognition to transcribe your voice.",
+        "NSCameraUsageDescription": "This app uses the camera to scan QR codes for configuration."
       }
     },
     "android": {
@@ -27,7 +29,8 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "permissions": [
-        "RECORD_AUDIO"
+        "RECORD_AUDIO",
+        "CAMERA"
       ],
       "package": "com.anonymous.inkeepmobile"
     },
@@ -35,7 +38,13 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-speech-recognition"
+      "expo-speech-recognition",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow $(PRODUCT_NAME) to access your camera to scan QR codes."
+        }
+      ]
     ]
   }
 }
