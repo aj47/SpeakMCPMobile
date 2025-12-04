@@ -11,6 +11,7 @@ import {
   Platform,
   KeyboardAvoidingView,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EventEmitter } from 'expo-modules-core';
@@ -35,34 +36,115 @@ export default function ChatScreen({ route, navigation }: any) {
     try { await saveConfig(nextCfg); } catch {}
   };
 
+  // Create client early so it's available for handleKillSwitch
+  const client = new OpenAIClient({
+    baseUrl: config.baseUrl,
+    apiKey: config.apiKey,
+    model: config.model,
+  });
+
+  const handleKillSwitch = async () => {
+    console.log('[ChatScreen] Kill switch button pressed');
+
+    // Alert.alert doesn't work on web, use window.confirm for web platform
+    if (Platform.OS === 'web') {
+      const confirmed = window.confirm(
+        '⚠️ Emergency Stop\n\nAre you sure you want to stop all agent sessions on the remote server? This will immediately terminate any running tasks.'
+      );
+      if (confirmed) {
+        console.log('[ChatScreen] Kill switch confirmed (web), calling API...');
+        try {
+          const result = await client.killSwitch();
+          console.log('[ChatScreen] Kill switch result:', result);
+          if (result.success) {
+            window.alert(result.message || 'All sessions stopped');
+          } else {
+            window.alert('Error: ' + (result.error || 'Failed to stop sessions'));
+          }
+        } catch (e: any) {
+          console.error('[ChatScreen] Kill switch error:', e);
+          window.alert('Error: ' + (e.message || 'Failed to connect to server'));
+        }
+      }
+      return;
+    }
+
+    // Native platforms use Alert.alert
+    Alert.alert(
+      '⚠️ Emergency Stop',
+      'Are you sure you want to stop all agent sessions on the remote server? This will immediately terminate any running tasks.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Stop All',
+          style: 'destructive',
+          onPress: async () => {
+            console.log('[ChatScreen] Kill switch confirmed, calling API...');
+            try {
+              const result = await client.killSwitch();
+              console.log('[ChatScreen] Kill switch result:', result);
+              if (result.success) {
+                Alert.alert('Success', result.message || 'All sessions stopped');
+              } else {
+                Alert.alert('Error', result.error || 'Failed to stop sessions');
+              }
+            } catch (e: any) {
+              console.error('[ChatScreen] Kill switch error:', e);
+              Alert.alert('Error', e.message || 'Failed to connect to server');
+            }
+          },
+        },
+      ],
+    );
+  };
+
   useLayoutEffect(() => {
     navigation?.setOptions?.({
       headerRight: () => (
-        <TouchableOpacity
-          onPress={toggleHandsFree}
-          accessibilityRole="button"
-          accessibilityLabel={`Toggle hands-free (currently ${handsFree ? 'on' : 'off'})`}
-          style={{ paddingHorizontal: 12, paddingVertical: 6 }}
-        >
-          <View style={{ width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: 18 }}>🎙️</Text>
-            {!handsFree && (
-              <View
-                style={{
-                  position: 'absolute',
-                  width: 20,
-                  height: 2,
-                  backgroundColor: theme.colors.danger,
-                  transform: [{ rotate: '45deg' }],
-                  borderRadius: 1,
-                }}
-              />
-            )}
-          </View>
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <TouchableOpacity
+            onPress={handleKillSwitch}
+            accessibilityRole="button"
+            accessibilityLabel="Emergency stop - kill all agent sessions"
+            style={{ paddingHorizontal: 8, paddingVertical: 6 }}
+          >
+            <View style={{
+              width: 28,
+              height: 28,
+              borderRadius: 14,
+              backgroundColor: theme.colors.danger,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              <Text style={{ fontSize: 14, color: '#FFFFFF' }}>⏹</Text>
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity
+            onPress={toggleHandsFree}
+            accessibilityRole="button"
+            accessibilityLabel={`Toggle hands-free (currently ${handsFree ? 'on' : 'off'})`}
+            style={{ paddingHorizontal: 12, paddingVertical: 6 }}
+          >
+            <View style={{ width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={{ fontSize: 18 }}>🎙️</Text>
+              {!handsFree && (
+                <View
+                  style={{
+                    position: 'absolute',
+                    width: 20,
+                    height: 2,
+                    backgroundColor: theme.colors.danger,
+                    transform: [{ rotate: '45deg' }],
+                    borderRadius: 1,
+                  }}
+                />
+              )}
+            </View>
+          </TouchableOpacity>
+        </View>
       ),
     });
-  }, [navigation, handsFree]);
+  }, [navigation, handsFree, handleKillSwitch]);
 
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -106,15 +188,6 @@ export default function ChatScreen({ route, navigation }: any) {
 
 
   const convoRef = useRef<string | undefined>(undefined);
-
-  const client = new OpenAIClient({
-    baseUrl: config.baseUrl,
-    apiKey: config.apiKey,
-    model: config.model,
-  });
-
-
-
 
   const send = async (text: string) => {
     if (!text.trim()) return;
