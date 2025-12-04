@@ -423,9 +423,11 @@ export default function ChatScreen({ route, navigation }: any) {
             </View>
           )}
         </ScrollView>
-        {!handsFree && listening && (
+        {listening && (
           <View style={[styles.overlay, { bottom: 72 + insets.bottom }]} pointerEvents="none">
-            <Text style={styles.overlayText}>{willCancel ? 'Release to edit' : 'Release to send'}</Text>
+            <Text style={styles.overlayText}>
+              {handsFree ? 'Listening...' : (willCancel ? 'Release to edit' : 'Release to send')}
+            </Text>
             {!!liveTranscript && (
               <Text style={styles.overlayTranscript} numberOfLines={2}>
                 {liveTranscript}
