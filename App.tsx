@@ -3,8 +3,10 @@ import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import SettingsScreen from './src/screens/SettingsScreen';
 import ChatScreen from './src/screens/ChatScreen';
+import SessionListScreen from './src/screens/SessionListScreen';
 import { ConfigContext, useConfig, saveConfig } from './src/store/config';
-import { View, ActivityIndicator, Image } from 'react-native';
+import { SessionContext, useSessionStore } from './src/store/sessions';
+import { View, ActivityIndicator, Image, TouchableOpacity, Text } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { theme } from './src/ui/theme';
 import * as Linking from 'expo-linking';
@@ -39,6 +41,7 @@ function parseDeepLink(url: string | null) {
 
 function Root() {
   const cfg = useConfig();
+  const sessionStore = useSessionStore();
 
   // Handle deep links
   useEffect(() => {
@@ -68,7 +71,7 @@ function Root() {
     return () => subscription.remove();
   }, [cfg.ready]);
 
-  if (!cfg.ready) {
+  if (!cfg.ready || sessionStore.isLoading) {
     return (
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator />
@@ -77,24 +80,41 @@ function Root() {
   }
   return (
     <ConfigContext.Provider value={cfg}>
-      <NavigationContainer theme={navTheme}>
-        <Stack.Navigator
-          screenOptions={{
-            headerTitleStyle: { ...theme.typography.h2 },
-            contentStyle: { backgroundColor: theme.colors.background },
-            headerLeft: () => (
-              <Image
-                source={require('./assets/favicon.png')}
-                style={{ width: 28, height: 28, marginLeft: 12, marginRight: 8 }}
-                resizeMode="contain"
-              />
-            ),
-          }}
-        >
-          <Stack.Screen name="Settings" component={SettingsScreen} />
-          <Stack.Screen name="Chat" component={ChatScreen} />
-        </Stack.Navigator>
-      </NavigationContainer>
+      <SessionContext.Provider value={sessionStore}>
+        <NavigationContainer theme={navTheme}>
+          <Stack.Navigator
+            screenOptions={{
+              headerTitleStyle: { ...theme.typography.h2 },
+              contentStyle: { backgroundColor: theme.colors.background },
+            }}
+          >
+            <Stack.Screen
+              name="Sessions"
+              component={SessionListScreen}
+              options={{
+                title: 'Chats',
+                headerLeft: () => (
+                  <Image
+                    source={require('./assets/favicon.png')}
+                    style={{ width: 28, height: 28, marginLeft: 12, marginRight: 8 }}
+                    resizeMode="contain"
+                  />
+                ),
+              }}
+            />
+            <Stack.Screen
+              name="Settings"
+              component={SettingsScreen}
+              options={{ headerBackTitle: 'Back' }}
+            />
+            <Stack.Screen
+              name="Chat"
+              component={ChatScreen}
+              options={{ headerBackTitle: 'Chats' }}
+            />
+          </Stack.Navigator>
+        </NavigationContainer>
+      </SessionContext.Provider>
     </ConfigContext.Provider>
   );
 }
