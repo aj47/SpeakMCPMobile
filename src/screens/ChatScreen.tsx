@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -19,11 +19,14 @@ import { useConfigContext, saveConfig } from '../store/config';
 import { OpenAIClient, ChatMessage } from '../lib/openaiClient';
 import * as Speech from 'expo-speech';
 import { useHeaderHeight } from '@react-navigation/elements';
-import { theme } from '../ui/theme';
+import { useTheme } from '../ui/ThemeProvider';
+import { spacing, radius, Theme } from '../ui/theme';
 
 export default function ChatScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
+  const { theme } = useTheme();
+  const styles = useMemo(() => createStyles(theme), [theme]);
   const { config, setConfig } = useConfigContext();
   const handsFree = !!config.handsFree;
   const handsFreeRef = useRef<boolean>(handsFree);
@@ -466,13 +469,13 @@ export default function ChatScreen({ route, navigation }: any) {
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1 }}
+      style={{ flex: 1, backgroundColor: theme.colors.background }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       keyboardVerticalOffset={headerHeight}
     >
       <View style={{ flex: 1 }}>
         <ScrollView
-          style={{ flex: 1, padding: theme.spacing.lg }}
+          style={{ flex: 1, padding: spacing.lg, backgroundColor: theme.colors.background }}
           contentContainerStyle={{ paddingBottom: insets.bottom }}
           keyboardShouldPersistTaps="handled"
           contentInsetAdjustmentBehavior="automatic"
@@ -482,11 +485,11 @@ export default function ChatScreen({ route, navigation }: any) {
               <Text style={styles.role}>{m.role}</Text>
               {m.role === 'assistant' && (!m.content || m.content.length === 0) ? (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  <ActivityIndicator size="small" color={theme.colors.text} />
-                  <Text>Assistant is thinking</Text>
+                  <ActivityIndicator size="small" color={theme.colors.foreground} />
+                  <Text style={{ color: theme.colors.foreground }}>Assistant is thinking</Text>
                 </View>
               ) : (
-                <Text>{m.content}</Text>
+                <Text style={{ color: theme.colors.foreground }}>{m.content}</Text>
               )}
             </View>
           ))}
@@ -532,7 +535,7 @@ export default function ChatScreen({ route, navigation }: any) {
                 if (!listening) startRecording(); else stopRecordingAndHandle();
               } : undefined}
             >
-              <Text style={{ color: listening ? '#FFFFFF' : theme.colors.text }}>
+              <Text style={{ color: listening ? theme.colors.primaryForeground : theme.colors.foreground }}>
                 {handsFree ? (listening ? 'Listening… Tap to Stop' : 'Tap to Talk') : (listening ? 'Recording…' : 'Hold to Talk')}
               </Text>
             </TouchableOpacity>
@@ -542,39 +545,116 @@ export default function ChatScreen({ route, navigation }: any) {
             value={input}
             onChangeText={setInput}
             placeholder={handsFree ? (listening ? 'Listening…' : 'Type a message or tap the mic') : (listening ? 'Listening…' : 'Type a message or hold the mic')}
+            placeholderTextColor={theme.colors.mutedForeground}
             multiline
           />
-          <Button title="Send" onPress={() => send(input)} />
+          <TouchableOpacity style={styles.sendButton} onPress={() => send(input)}>
+            <Text style={styles.sendButtonText}>Send</Text>
+          </TouchableOpacity>
         </View>
       </View>
     </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
-  msg: { padding: theme.spacing.md, borderRadius: 12, marginBottom: theme.spacing.sm, maxWidth: '85%' },
-  user: { backgroundColor: theme.colors.primarySoft, alignSelf: 'flex-end' },
-  assistant: { backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border, alignSelf: 'flex-start' },
-  role: { ...theme.typography.caption, marginBottom: theme.spacing.xs },
-  inputRow: { flexDirection: 'row', alignItems: 'center', gap: theme.spacing.sm, padding: theme.spacing.md, borderTopWidth: theme.hairline, borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
-  input: { ...theme.input, flex: 1, maxHeight: 120 },
-  micWrapper: { borderRadius: 10 },
-  mic: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: theme.colors.border, backgroundColor: theme.colors.surface },
-  micOn: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
-  debugInfo: {
-    backgroundColor: '#f0f0f0',
-    padding: theme.spacing.sm,
-    margin: theme.spacing.sm,
-    borderRadius: 8,
-    borderLeftWidth: 4,
-    borderLeftColor: '#007AFF'
-  },
-  debugText: {
-    fontSize: 12,
-    color: '#666',
-    fontFamily: 'monospace'
-  },
-  overlay: { position: 'absolute', left: 0, right: 0, bottom: 72, alignItems: 'center', padding: theme.spacing.md },
-  overlayText: { ...theme.typography.caption, backgroundColor: 'rgba(0,0,0,0.75)', color: '#FFFFFF', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, marginBottom: 6 },
-  overlayTranscript: { backgroundColor: 'rgba(0,0,0,0.6)', color: '#FFFFFF', padding: 10, borderRadius: 10, maxWidth: '90%' },
-});
+// Create dynamic styles based on theme
+function createStyles(theme: Theme) {
+  return StyleSheet.create({
+    msg: {
+      padding: spacing.md,
+      borderRadius: radius.xl,
+      marginBottom: spacing.sm,
+      maxWidth: '85%',
+    },
+    user: {
+      backgroundColor: theme.colors.secondary,
+      alignSelf: 'flex-end',
+    },
+    assistant: {
+      backgroundColor: theme.colors.card,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      alignSelf: 'flex-start',
+    },
+    role: {
+      ...theme.typography.caption,
+      marginBottom: spacing.xs,
+    },
+    inputRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      padding: spacing.md,
+      borderTopWidth: theme.hairline,
+      borderColor: theme.colors.border,
+      backgroundColor: theme.colors.card,
+    },
+    input: {
+      ...theme.input,
+      flex: 1,
+      maxHeight: 120,
+    },
+    micWrapper: {
+      borderRadius: radius.lg,
+    },
+    mic: {
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: radius.full,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      backgroundColor: theme.colors.card,
+    },
+    micOn: {
+      backgroundColor: theme.colors.primary,
+      borderColor: theme.colors.primary,
+    },
+    sendButton: {
+      backgroundColor: theme.colors.primary,
+      paddingHorizontal: spacing.md,
+      paddingVertical: spacing.sm,
+      borderRadius: radius.lg,
+    },
+    sendButtonText: {
+      color: theme.colors.primaryForeground,
+      fontWeight: '600',
+    },
+    debugInfo: {
+      backgroundColor: theme.colors.muted,
+      padding: spacing.sm,
+      margin: spacing.sm,
+      borderRadius: radius.lg,
+      borderLeftWidth: 4,
+      borderLeftColor: theme.colors.primary,
+    },
+    debugText: {
+      fontSize: 12,
+      color: theme.colors.mutedForeground,
+      fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    },
+    overlay: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: 72,
+      alignItems: 'center',
+      padding: spacing.md,
+    },
+    overlayText: {
+      ...theme.typography.caption,
+      backgroundColor: 'rgba(0,0,0,0.75)',
+      color: '#FFFFFF',
+      paddingHorizontal: 12,
+      paddingVertical: 8,
+      borderRadius: radius.xl,
+      marginBottom: 6,
+    },
+    overlayTranscript: {
+      backgroundColor: 'rgba(0,0,0,0.6)',
+      color: '#FFFFFF',
+      padding: 10,
+      borderRadius: radius.lg,
+      maxWidth: '90%',
+    },
+  });
+}
