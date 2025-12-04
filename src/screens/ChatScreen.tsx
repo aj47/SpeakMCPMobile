@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -16,18 +16,61 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EventEmitter } from 'expo-modules-core';
 import { useConfigContext, saveConfig } from '../store/config';
+import { useSessionContext } from '../store/sessions';
 import { OpenAIClient, ChatMessage } from '../lib/openaiClient';
+import { ChatMessage as SessionMessage, generateMessageId } from '../types/session';
 import * as Speech from 'expo-speech';
 import { useHeaderHeight } from '@react-navigation/elements';
 import { theme } from '../ui/theme';
+
+// Convert session messages to OpenAI format
+function sessionToOpenAIMessages(messages: SessionMessage[]): ChatMessage[] {
+  return messages.map(m => ({
+    id: m.id,
+    role: m.role,
+    content: m.content,
+  }));
+}
+
+// Convert OpenAI message to session message
+function openAIToSessionMessage(msg: ChatMessage): SessionMessage {
+  return {
+    id: msg.id || generateMessageId(),
+    role: msg.role,
+    content: msg.content || '',
+    timestamp: Date.now(),
+  };
+}
 
 export default function ChatScreen({ route, navigation }: any) {
   const insets = useSafeAreaInsets();
   const headerHeight = useHeaderHeight();
   const { config, setConfig } = useConfigContext();
+  const sessionStore = useSessionContext();
   const handsFree = !!config.handsFree;
   const handsFreeRef = useRef<boolean>(handsFree);
   useEffect(() => { handsFreeRef.current = !!config.handsFree; }, [config.handsFree]);
+
+  // Get current session and its messages
+  const currentSession = sessionStore.getCurrentSession();
+  const sessionId = currentSession?.id;
+
+  // IMPORTANT: Use refs to store latest values that need to be accessible from stale closures
+  // Voice recognition callbacks capture old closures, so we use refs to get the latest values
+  const serverConversationIdRef = useRef<string | undefined>(currentSession?.serverConversationId);
+  const sessionIdRef = useRef<string | undefined>(sessionId);
+  const sessionStoreRef = useRef(sessionStore);
+
+  // Keep refs updated with latest values
+  useEffect(() => {
+    serverConversationIdRef.current = currentSession?.serverConversationId;
+    sessionIdRef.current = sessionId;
+    sessionStoreRef.current = sessionStore;
+    console.log('[ChatScreen] Refs updated:', {
+      sessionId: sessionId,
+      serverConversationId: currentSession?.serverConversationId || 'NONE',
+    });
+  }, [currentSession?.serverConversationId, sessionId, sessionStore]);
 
   const toggleHandsFree = async () => {
     const next = !handsFreeRef.current;
@@ -100,6 +143,7 @@ export default function ChatScreen({ route, navigation }: any) {
 
   useLayoutEffect(() => {
     navigation?.setOptions?.({
+      title: currentSession?.title || 'Chat',
       headerRight: () => (
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <TouchableOpacity
@@ -144,15 +188,37 @@ export default function ChatScreen({ route, navigation }: any) {
         </View>
       ),
     });
-  }, [navigation, handsFree, handleKillSwitch]);
+  }, [navigation, handsFree, handleKillSwitch, currentSession?.title]);
 
 
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  // Initialize messages from current session
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    if (currentSession) {
+      return sessionToOpenAIMessages(currentSession.messages);
+    }
+    return [];
+  });
   const [input, setInput] = useState('');
   const [listening, setListening] = useState(false);
   const [liveTranscript, setLiveTranscript] = useState('');
   const [responding, setResponding] = useState(false);
   const [debugInfo, setDebugInfo] = useState<string>('');
+
+  // Sync messages when session changes
+  useEffect(() => {
+    if (currentSession) {
+      setMessages(sessionToOpenAIMessages(currentSession.messages));
+    } else {
+      setMessages([]);
+    }
+  }, [sessionId]); // Only re-sync when session ID changes
+
+  // Redirect to sessions list if no current session
+  useEffect(() => {
+    if (!sessionId && !sessionStore.isLoading) {
+      navigation.navigate('Sessions');
+    }
+  }, [sessionId, sessionStore.isLoading, navigation]);
 
   const [willCancel, setWillCancel] = useState(false);
   const startYRef = useRef<number | null>(null);
@@ -192,13 +258,21 @@ export default function ChatScreen({ route, navigation }: any) {
   const send = async (text: string) => {
     if (!text.trim()) return;
 
-    console.log('[ChatScreen] Sending message:', text);
-    console.log('[ChatScreen] Platform:', Platform.OS);
-    console.log('[ChatScreen] Current config:', {
-      baseUrl: config.baseUrl,
-      model: config.model,
-      apiKeyLength: config.apiKey?.length || 0
-    });
+    // IMPORTANT: Use refs to get the latest values - this avoids stale closure issues
+    // when this function is called from voice recognition callbacks that captured old closures
+    const freshSessionId = sessionIdRef.current;
+    const freshServerConversationId = serverConversationIdRef.current;
+    const store = sessionStoreRef.current;
+
+    if (!freshSessionId) {
+      console.warn('[ChatScreen] No active session, cannot send message');
+      return;
+    }
+
+    console.log('[ChatScreen] ====== SENDING MESSAGE ======');
+    console.log('[ChatScreen] Message:', text);
+    console.log('[ChatScreen] Local Session ID (from ref):', freshSessionId);
+    console.log('[ChatScreen] Server Conversation ID (from ref):', freshServerConversationId || 'NONE (will create new)');
 
     setDebugInfo(`Starting request to ${config.baseUrl}...`);
 
@@ -206,31 +280,53 @@ export default function ChatScreen({ route, navigation }: any) {
     setMessages((m) => [...m, userMsg, { role: 'assistant', content: '' }]);
     setResponding(true);
 
+    // Persist user message to session store (use store from ref)
+    store.addMessageToSession(freshSessionId, 'user', text);
+
     setInput('');
     try {
       let full = '';
       console.log('[ChatScreen] Starting chat request with', messages.length + 1, 'messages');
       setDebugInfo('Request sent, waiting for response...');
-      const reply = await client.chat([...messages, userMsg], (tok) => {
-        full += tok;
-        console.log('[ChatScreen] Token received:', tok);
-        setDebugInfo(`Receiving tokens... (${full.length} chars so far)`);
 
-        setMessages((m) => {
-          const copy = [...m];
-          // Update the last assistant message incrementally
-          for (let i = copy.length - 1; i >= 0; i--) {
-            if (copy[i].role === 'assistant') {
-              copy[i] = { ...copy[i], content: (copy[i].content || '') + tok };
-              break;
+      // Pass the server conversation ID to continue the same conversation on the server
+      // Use freshServerConversationId to avoid stale closure issues
+      const chatResponse = await client.chat(
+        [...messages, userMsg],
+        (tok) => {
+          full += tok;
+          setDebugInfo(`Receiving tokens... (${full.length} chars so far)`);
+
+          setMessages((m) => {
+            const copy = [...m];
+            // Update the last assistant message incrementally
+            for (let i = copy.length - 1; i >= 0; i--) {
+              if (copy[i].role === 'assistant') {
+                copy[i] = { ...copy[i], content: (copy[i].content || '') + tok };
+                break;
+              }
             }
-          }
-          return copy;
-        });
-      });
-      const finalText = reply || full;
-      console.log('[ChatScreen] Chat completed, final text length:', finalText?.length || 0);
+            return copy;
+          });
+        },
+        freshServerConversationId // Use fresh value, not captured currentSession
+      );
+
+      const finalText = chatResponse.content || full;
+      console.log('[ChatScreen] ====== RESPONSE RECEIVED ======');
+      console.log('[ChatScreen] Response length:', finalText?.length || 0);
+      console.log('[ChatScreen] Server conversation ID from response:', chatResponse.conversationId || 'NONE');
       setDebugInfo(`Completed! Received ${finalText?.length || 0} characters`);
+
+      // Store the server conversation ID for future messages in this session
+      if (chatResponse.conversationId && chatResponse.conversationId !== freshServerConversationId) {
+        console.log('[ChatScreen] STORING new server conversation ID:', chatResponse.conversationId);
+        store.setServerConversationId(freshSessionId, chatResponse.conversationId);
+        // Also update the ref immediately so subsequent messages in the same batch use it
+        serverConversationIdRef.current = chatResponse.conversationId;
+      } else {
+        console.log('[ChatScreen] NOT storing conversation ID - already have:', freshServerConversationId);
+      }
 
       if (finalText) {
         setMessages((m) => {
@@ -243,17 +339,17 @@ export default function ChatScreen({ route, navigation }: any) {
           }
           return copy;
         });
+        // Persist assistant response to session store (use store from ref)
+        store.addMessageToSession(freshSessionId, 'assistant', finalText);
         Speech.speak(finalText, { language: 'en-US' });
       }
     } catch (e: any) {
       console.error('[ChatScreen] Chat error:', e);
-      console.error('[ChatScreen] Error details:', {
-        message: e.message,
-        stack: e.stack,
-        name: e.name
-      });
       setDebugInfo(`Error: ${e.message}`);
-      setMessages((m) => [...m, { role: 'assistant', content: `Error: ${e.message}` }]);
+      const errorMsg = `Error: ${e.message}`;
+      setMessages((m) => [...m, { role: 'assistant', content: errorMsg }]);
+      // Persist error message to session store (use store from ref)
+      store.addMessageToSession(freshSessionId, 'assistant', errorMsg);
     } finally {
       console.log('[ChatScreen] Chat request finished');
       setResponding(false);
