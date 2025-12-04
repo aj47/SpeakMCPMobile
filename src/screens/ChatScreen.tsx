@@ -347,6 +347,7 @@ export default function ChatScreen({ route, navigation }: any) {
     } catch (err) {
       console.warn('[Voice] startRecording error', err);
       setListening(false);
+      startingRef.current = false;
     }
   };
 
@@ -437,26 +438,24 @@ export default function ChatScreen({ route, navigation }: any) {
             <TouchableOpacity
               style={[styles.mic, listening && styles.micOn]}
               activeOpacity={0.7}
-              {...(!handsFree ? {
-                onPressIn: () => {
-                  lastGrantTimeRef.current = Date.now();
-                  if (!listening) startRecording();
-                },
-                onPressOut: () => {
-                  const now = Date.now();
-                  const dt = now - lastGrantTimeRef.current;
-                  const delay = Math.max(0, minHoldMs - dt);
-                  if (delay > 0) {
-                    setTimeout(() => { if (listening) stopRecordingAndHandle(); }, delay);
-                  } else {
-                    if (listening) stopRecordingAndHandle();
-                  }
+              delayPressIn={0}
+              onPressIn={!handsFree ? (e: GestureResponderEvent) => {
+                lastGrantTimeRef.current = Date.now();
+                if (!listening) startRecording(e);
+              } : undefined}
+              onPressOut={!handsFree ? () => {
+                const now = Date.now();
+                const dt = now - lastGrantTimeRef.current;
+                const delay = Math.max(0, minHoldMs - dt);
+                if (delay > 0) {
+                  setTimeout(() => { if (listening) stopRecordingAndHandle(); }, delay);
+                } else {
+                  if (listening) stopRecordingAndHandle();
                 }
-              } : {
-                onPress: () => {
-                  if (!listening) startRecording(); else stopRecordingAndHandle();
-                }
-              })}
+              } : undefined}
+              onPress={handsFree ? () => {
+                if (!listening) startRecording(); else stopRecordingAndHandle();
+              } : undefined}
             >
               <Text style={{ color: listening ? '#FFFFFF' : theme.colors.text }}>
                 {handsFree ? (listening ? 'Listening… Tap to Stop' : 'Tap to Talk') : (listening ? 'Recording…' : 'Hold to Talk')}
