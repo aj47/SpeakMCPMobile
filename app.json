@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "OpenAI Chat Mobile",
-    "slug": "openai-chat-mobile",
+    "name": "SpeakMCP",
+    "slug": "speakmcp-mobile",
     "scheme": "speakmcp",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -32,7 +32,7 @@
         "RECORD_AUDIO",
         "CAMERA"
       ],
-      "package": "com.anonymous.inkeepmobile"
+      "package": "com.aj47.speakmcp"
     },
     "web": {
       "favicon": "./assets/favicon.png"
