@@ -1,21 +1,16 @@
 import { StatusBar } from 'expo-status-bar';
-import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import SettingsScreen from './src/screens/SettingsScreen';
 import ChatScreen from './src/screens/ChatScreen';
 import { ConfigContext, useConfig, saveConfig } from './src/store/config';
 import { View, ActivityIndicator, Image } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { theme } from './src/ui/theme';
+import { ThemeProvider, useTheme } from './src/ui/ThemeProvider';
 import * as Linking from 'expo-linking';
 import { useEffect } from 'react';
 
 const Stack = createNativeStackNavigator();
-
-const navTheme = {
-  ...DefaultTheme,
-  colors: { ...DefaultTheme.colors, background: theme.colors.background },
-};
 
 function parseDeepLink(url: string | null) {
   if (!url) return null;
@@ -37,8 +32,22 @@ function parseDeepLink(url: string | null) {
   return null;
 }
 
-function Root() {
+function Navigation() {
+  const { theme, isDark } = useTheme();
   const cfg = useConfig();
+
+  // Create navigation theme that matches our theme
+  const navTheme = {
+    ...(isDark ? DarkTheme : DefaultTheme),
+    colors: {
+      ...(isDark ? DarkTheme.colors : DefaultTheme.colors),
+      background: theme.colors.background,
+      card: theme.colors.card,
+      text: theme.colors.foreground,
+      border: theme.colors.border,
+      primary: theme.colors.primary,
+    },
+  };
 
   // Handle deep links
   useEffect(() => {
@@ -70,17 +79,21 @@ function Root() {
 
   if (!cfg.ready) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator />
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.background }}>
+        <ActivityIndicator color={theme.colors.foreground} />
       </View>
     );
   }
+
   return (
     <ConfigContext.Provider value={cfg}>
       <NavigationContainer theme={navTheme}>
         <Stack.Navigator
+          initialRouteName="Settings"
           screenOptions={{
             headerTitleStyle: { ...theme.typography.h2 },
+            headerStyle: { backgroundColor: theme.colors.card },
+            headerTintColor: theme.colors.foreground,
             contentStyle: { backgroundColor: theme.colors.background },
             headerLeft: () => (
               <Image
@@ -91,7 +104,11 @@ function Root() {
             ),
           }}
         >
-          <Stack.Screen name="Settings" component={SettingsScreen} />
+          <Stack.Screen
+            name="Settings"
+            component={SettingsScreen}
+            options={{ title: 'SpeakMCP' }}
+          />
           <Stack.Screen name="Chat" component={ChatScreen} />
         </Stack.Navigator>
       </NavigationContainer>
@@ -99,13 +116,37 @@ function Root() {
   );
 }
 
+function Root() {
+  const cfg = useConfig();
+  const { theme } = useTheme();
+
+  if (!cfg.ready) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: theme.colors.background }}>
+        <ActivityIndicator color={theme.colors.foreground} />
+      </View>
+    );
+  }
+
+  return (
+    <ConfigContext.Provider value={cfg}>
+      <Navigation />
+    </ConfigContext.Provider>
+  );
+}
+
+function StatusBarWrapper() {
+  const { isDark } = useTheme();
+  return <StatusBar style={isDark ? 'light' : 'dark'} />;
+}
+
 export default function App() {
   return (
-    <>
-      <StatusBar style="dark" />
-      <SafeAreaProvider>
+    <SafeAreaProvider>
+      <ThemeProvider>
+        <StatusBarWrapper />
         <Root />
-      </SafeAreaProvider>
-    </>
+      </ThemeProvider>
+    </SafeAreaProvider>
   );
 }
