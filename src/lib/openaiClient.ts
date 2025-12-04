@@ -230,5 +230,47 @@ export class OpenAIClient {
       throw error;
     }
   }
+
+  /**
+   * POST /v1/emergency-stop - Kill switch to stop all agent sessions on the remote server
+   * Returns success status and number of processes killed
+   */
+  async killSwitch(): Promise<{ success: boolean; message?: string; error?: string; processesKilled?: number }> {
+    const url = this.getUrl('/emergency-stop');
+    console.log('[OpenAIClient] Triggering emergency stop:', url);
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: this.authHeaders(),
+        body: JSON.stringify({}), // Fastify requires a body when Content-Type is application/json
+      });
+
+      console.log('[OpenAIClient] Kill switch response:', res.status, res.statusText);
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        console.error('[OpenAIClient] Kill switch error:', data);
+        return {
+          success: false,
+          error: data?.error || `Kill switch failed: ${res.status}`,
+        };
+      }
+
+      console.log('[OpenAIClient] Kill switch success:', data);
+      return {
+        success: true,
+        message: data?.message || 'Emergency stop executed',
+        processesKilled: data?.processesKilled,
+      };
+    } catch (error: any) {
+      console.error('[OpenAIClient] Kill switch request failed:', error);
+      return {
+        success: false,
+        error: error?.message || 'Failed to connect to server',
+      };
+    }
+  }
 }
 
